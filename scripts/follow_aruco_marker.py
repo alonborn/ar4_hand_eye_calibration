@@ -86,6 +86,7 @@ class ArucoMarkerFollower(Node):
                                                     "base_link")
             self.logger.info(f"transformed_pose:" + str(transformed_pose))
         except tf2_ros.LookupException as e:
+            self.logger.info(f"Error with: cal_marker_pose:" + str(cal_marker_pose))
             self.logger.error(f"Error transforming pose: {e}")
             return
 
