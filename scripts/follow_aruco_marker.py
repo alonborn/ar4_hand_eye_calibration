@@ -14,6 +14,7 @@ from geometry_msgs.msg import Pose
 from ros2_aruco_interfaces.msg import ArucoMarkers
 from tf2_geometry_msgs import do_transform_pose
 from pymoveit2 import MoveIt2
+import logging
 
 
 class ArucoMarkerFollower(Node):
@@ -21,6 +22,22 @@ class ArucoMarkerFollower(Node):
     def __init__(self):
         super().__init__("aruco_marker_follower")
         self.logger = self.get_logger()
+
+        # Create a secondary logger for file output
+        self.file_logger = logging.getLogger('aruco_pose_logger')
+        self.file_logger.setLevel(logging.INFO)
+
+        # File handler setup
+        file_handler = logging.FileHandler('/home/alon/Documents/aruco_pose_log.txt')
+        file_handler.setLevel(logging.INFO)
+
+        # Add a formatter for clear log structure
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+
+        # Attach the handler to the new logger
+        self.file_logger.addHandler(file_handler)
+
 
         self.arm_joint_names = [
             "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"
@@ -36,6 +53,7 @@ class ArucoMarkerFollower(Node):
         self.moveit2.planner_id = "RRTConnectkConfigDefault"
         self.moveit2.max_velocity = 1.0
         self.moveit2.max_acceleration = 1.0
+        self.moveit2.planning_time = 5.0  # Timeout in seconds
 
         # ID of the aruco marker mounted on the robot
         self.marker_id = self.declare_parameter(
@@ -54,6 +72,25 @@ class ArucoMarkerFollower(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self._prev_marker_pose = None
 
+
+    def write_to_logger(self, transformed_pose):
+        # Extract position values
+        position = transformed_pose.position
+        x, y, z = round(position.x, 3), round(position.y, 3), round(position.z, 3)
+
+           # Extract rotation (quaternion) values
+        orientation = transformed_pose.orientation
+        qx, qy, qz, qw = (
+            round(orientation.x, 3),
+            round(orientation.y, 3),
+            round(orientation.z, 3),
+            round(orientation.w, 3)
+        )
+
+        # Log the formatted position
+        self.file_logger.info(f"Position: {x},{y},{z} | Rotation: {qx},{qy},{qz},{qw}")
+        
+
     def handle_aruco_markers(self, msg: ArucoMarkers):
         cal_marker_pose = None
         for i, marker_id in enumerate(msg.marker_ids):
@@ -64,6 +101,7 @@ class ArucoMarkerFollower(Node):
                 self.logger.info(f"Detected unexpected marker with ID: {marker_id}")
 
         if cal_marker_pose is None:
+            self.logger.error(f"Could not find marker with ID: {self.marker_id}")
             return
 
         # only start following if the marker pose has changed by at least 2cm
@@ -84,9 +122,10 @@ class ArucoMarkerFollower(Node):
             transformed_pose = self._transform_pose(cal_marker_pose,
                                                     "camera_color_optical_frame",
                                                     "base_link")
-            self.logger.info(f"transformed_pose:" + str(transformed_pose))
+            self.write_to_logger(transformed_pose)
+            
         except tf2_ros.LookupException as e:
-            self.logger.info(f"Error with: cal_marker_pose:" + str(cal_marker_pose))
+            self.file_logger.info(f"Error with: cal_marker_pose:" + str(cal_marker_pose))
             self.logger.error(f"Error transforming pose: {e}")
             return
 
@@ -121,7 +160,9 @@ class ArucoMarkerFollower(Node):
         pose_goal.pose = msg
 
         self.moveit2.move_to_pose(pose=pose_goal)
-        self.moveit2.wait_until_executed()
+        ret = self.moveit2.wait_until_executed()
+        if ret:
+            self.file_logger.info("Move successful")
 
 
 def main():

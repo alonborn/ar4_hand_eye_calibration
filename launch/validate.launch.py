@@ -34,7 +34,15 @@ def generate_launch_description():
                     "rs_launch.py",
                 )
             ]
-        )
+        ),
+        launch_arguments={
+            "color_width": "640",
+            "color_height": "480",
+            "color_fps": "15",
+            "enable_infra1": "false",
+            "enable_infra2": "false",
+            "initial_reset": "true"
+        }.items()
     )
 
     aruco_params = os.path.join(

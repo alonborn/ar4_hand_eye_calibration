@@ -46,6 +46,7 @@ class ArucoPoseEstimator(Node):
 
         # Image publisher
         self.image_publisher = self.create_publisher(Image, '/aruco_image', 10)
+        self.get_logger().info(f"initialization complete")
 
     def camera_info_callback(self, msg):
         # Extract camera matrix and distortion coefficients from CameraInfo message
@@ -89,6 +90,7 @@ class ArucoPoseEstimator(Node):
         try:
             overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
             self.image_publisher.publish(overlay_msg)
+            
         except Exception as e:
             self.get_logger().error(f"Error publishing image: {e}")
 
