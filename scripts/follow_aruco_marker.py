@@ -15,7 +15,10 @@ from ros2_aruco_interfaces.msg import ArucoMarkers
 from tf2_geometry_msgs import do_transform_pose
 from pymoveit2 import MoveIt2
 import logging
+import debugpy
 
+#view end effector position
+#ros2 run tf2_ros tf2_echo base_link ee_link
 
 class ArucoMarkerFollower(Node):
 
@@ -103,7 +106,7 @@ class ArucoMarkerFollower(Node):
         if cal_marker_pose is None:
             self.logger.error(f"Could not find marker with ID: {self.marker_id}")
             return
-
+        self.logger.info(f"handle aruco markers")
         # only start following if the marker pose has changed by at least 2cm
         if self._prev_marker_pose is not None:
             if ((cal_marker_pose.position.x -
@@ -129,8 +132,18 @@ class ArucoMarkerFollower(Node):
             self.logger.error(f"Error transforming pose: {e}")
             return
 
-        self.logger.info(f"Following marker at pose: {transformed_pose}")
+        transformed_pose.position.x = 0.04
+        transformed_pose.position.y = -0.31
+        transformed_pose.position.z = 0.375
+        transformed_pose.orientation.x = 0.044
+        transformed_pose.orientation.y = -0.702
+        transformed_pose.orientation.z = 0.71
+        transformed_pose.orientation.w = -0.033
+
+
+        self.logger.info(f"Following marker at pose2: {transformed_pose}")
         self.move_to(transformed_pose)
+        self.logger.info(f"Done moving: {transformed_pose}")
 
     def _transform_pose(self, pose: Pose, source_frame,
                         target_frame: str) -> Pose:
@@ -166,6 +179,12 @@ class ArucoMarkerFollower(Node):
 
 
 def main():
+
+    # Allow attaching the debugger remotely on port 5678
+    # debugpy.listen(("0.0.0.0", 5678))
+    # print("Waiting for debugger to attach...")
+    # debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
+
     rclpy.init()
     node = ArucoMarkerFollower()
     executor = MultiThreadedExecutor(4)
