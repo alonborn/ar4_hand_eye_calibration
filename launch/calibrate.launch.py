@@ -38,6 +38,7 @@ def generate_launch_description():
         "include_gripper": "False",
         "rviz_config_file": rviz_config_file,
     }.items()
+    
     ar_moveit = IncludeLaunchDescription(
         ar_moveit_launch, launch_arguments=ar_moveit_args
     )
@@ -94,10 +95,19 @@ def generate_launch_description():
         arguments=["0", "0", "0", "0", "0", "0", "world", "camera_link"],
         output="screen",
     )
+    
+    ar_move_service = Node(
+        package="ar4_hand_eye_calibration",
+        executable="move_ar.py",
+        name="move_ar",
+        output="screen",
+    )
+
 
     ld = LaunchDescription()
     ld.add_action(realsense)
     ld.add_action(static_tf_publisher)
+    ld.add_action(ar_move_service)
     ld.add_action(ar_moveit)
     ld.add_action(aruco_recognition_node)
     ld.add_action(calibration_aruco_publisher)
