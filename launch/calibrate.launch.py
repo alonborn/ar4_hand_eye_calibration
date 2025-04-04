@@ -96,18 +96,9 @@ def generate_launch_description():
         output="screen",
     )
     
-    ar_move_service = Node(
-        package="ar4_hand_eye_calibration",
-        executable="move_ar.py",
-        name="move_ar",
-        output="screen",
-    )
-
-
     ld = LaunchDescription()
     ld.add_action(realsense)
     ld.add_action(static_tf_publisher)
-    ld.add_action(ar_move_service)
     ld.add_action(ar_moveit)
     ld.add_action(aruco_recognition_node)
     ld.add_action(calibration_aruco_publisher)
