@@ -41,6 +41,10 @@ class ArucoMarkerFollower(Node):
         # Attach the handler to the new logger
         self.file_logger.addHandler(file_handler)
 
+        # Timer: callback every 2.0 seconds
+        self.timer_callback_group = ReentrantCallbackGroup()
+        self.timer = self.create_timer(2.0, self.timer_callback,callback_group=self.timer_callback_group)
+
 
         self.arm_joint_names = [
             "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"
@@ -76,6 +80,9 @@ class ArucoMarkerFollower(Node):
         self._prev_marker_pose = None
 
 
+    def timer_callback(self):
+        self.get_logger().info('ROS loop is alive!')
+
     def write_to_logger(self, transformed_pose):
         # Extract position values
         position = transformed_pose.position
@@ -95,43 +102,46 @@ class ArucoMarkerFollower(Node):
         
 
     def handle_aruco_markers(self, msg: ArucoMarkers):
-        cal_marker_pose = None
-        for i, marker_id in enumerate(msg.marker_ids):
-            if marker_id == self.marker_id:
-                cal_marker_pose = msg.poses[i]
-                break
-            else:
-                self.logger.info(f"Detected unexpected marker with ID: {marker_id}")
 
-        if cal_marker_pose is None:
-            self.logger.error(f"Could not find marker with ID: {self.marker_id}")
-            return
-        self.logger.info(f"handle aruco markers")
-        # only start following if the marker pose has changed by at least 2cm
-        if self._prev_marker_pose is not None:
-            if ((cal_marker_pose.position.x -
-                 self._prev_marker_pose.position.x)**2 +
-                (cal_marker_pose.position.y -
-                 self._prev_marker_pose.position.y)**2 +
-                (cal_marker_pose.position.z -
-                 self._prev_marker_pose.position.z)**2 > 0.02**2):
-                self._prev_marker_pose = cal_marker_pose
-                return
+        self.file_logger.info(f"Received aruco markers: {msg.marker_ids}")
 
-        self._prev_marker_pose = cal_marker_pose
+        # cal_marker_pose = None
+        # for i, marker_id in enumerate(msg.marker_ids):
+        #     if marker_id == self.marker_id:
+        #         cal_marker_pose = msg.poses[i]
+        #         break
+        #     else:
+        #         self.logger.info(f"Detected unexpected marker with ID: {marker_id}")
 
-        # get pose in robot base frame
-        try:
-            transformed_pose = self._transform_pose(cal_marker_pose,
-                                                    "camera_color_optical_frame",
-                                                    "base_link")
-            self.write_to_logger(transformed_pose)
+        # if cal_marker_pose is None:
+        #     self.logger.error(f"Could not find marker with ID: {self.marker_id}")
+        #     return
+        # self.logger.info(f"handle aruco markers")
+        # # only start following if the marker pose has changed by at least 2cm
+        # if self._prev_marker_pose is not None:
+        #     if ((cal_marker_pose.position.x -
+        #          self._prev_marker_pose.position.x)**2 +
+        #         (cal_marker_pose.position.y -
+        #          self._prev_marker_pose.position.y)**2 +
+        #         (cal_marker_pose.position.z -
+        #          self._prev_marker_pose.position.z)**2 > 0.02**2):
+        #         self._prev_marker_pose = cal_marker_pose
+        #         return
+
+        # self._prev_marker_pose = cal_marker_pose
+
+        # # get pose in robot base frame
+        # try:
+        #     transformed_pose = self._transform_pose(cal_marker_pose,
+        #                                             "camera_color_optical_frame",
+        #                                             "base_link")
+        #     self.write_to_logger(transformed_pose)
             
-        except tf2_ros.LookupException as e:
-            self.file_logger.info(f"Error with: cal_marker_pose:" + str(cal_marker_pose))
-            self.logger.error(f"Error transforming pose: {e}")
-            return
-
+        # except tf2_ros.LookupException as e:
+        #     self.file_logger.info(f"Error with: cal_marker_pose:" + str(cal_marker_pose))
+        #     self.logger.error(f"Error transforming pose: {e}")
+        #     return
+        transformed_pose = Pose()
         transformed_pose.position.x = 0.04
         transformed_pose.position.y = -0.31
         transformed_pose.position.z = 0.375
