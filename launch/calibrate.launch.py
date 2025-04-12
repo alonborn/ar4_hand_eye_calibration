@@ -26,6 +26,7 @@ def generate_launch_description():
                 get_package_share_directory("annin_ar4_moveit_config"),
                 "launch",
                 "moveit.launch.py",
+                #"demo.launch.py",
             )
         ]
     )
