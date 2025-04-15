@@ -7,6 +7,7 @@ from rclpy.node import ParameterType, ParameterDescriptor
 from ros2_aruco_interfaces.msg import ArucoMarkers
 from tf2_ros import TransformBroadcaster
 
+import debugpy
 
 class CalibrationArucoPublisher(Node):
     """ROS2 node that listens to the aruco markers topic and publishes the 
@@ -64,6 +65,12 @@ class CalibrationArucoPublisher(Node):
 
 
 def main():
+
+    # debugpy.listen(("localhost", 5678))  # Port for debugger to connect
+    # print("Waiting for debugger to attach...")
+    # debugpy.wait_for_client()  # Ensures the debugger connects before continuing
+    # print("Debugger connected.")
+
     rclpy.init()
     node = CalibrationArucoPublisher()
     try:
