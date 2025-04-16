@@ -75,6 +75,13 @@ def generate_launch_description():
             }
         ],
     )
+    
+    move_ar2_node = Node(
+        package="ar_utils",
+        executable="move_ar2",
+        name="move_ar2",
+        output="screen"
+    )
 
     easy_handeye2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -104,4 +111,5 @@ def generate_launch_description():
     ld.add_action(aruco_recognition_node)
     ld.add_action(calibration_aruco_publisher)
     ld.add_action(easy_handeye2)
+    ld.add_action(move_ar2_node)
     return ld

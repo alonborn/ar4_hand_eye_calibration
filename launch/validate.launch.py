@@ -17,12 +17,20 @@ def load_yaml(package_name, file_name):
 
 
 def generate_launch_description():
+
     ar_model_config = LaunchConfiguration("ar_model")
     ar_model_arg = DeclareLaunchArgument(
         "ar_model",
         default_value="mk1",
         choices=["mk1", "mk2", "mk3"],
         description="Model of AR4",
+    )
+
+    move_ar2_node = Node(
+        package="ar_utils",
+        executable="move_ar2",
+        name="move_ar2",
+        output="screen"
     )
 
     realsense = IncludeLaunchDescription(
@@ -66,6 +74,7 @@ def generate_launch_description():
         executable="follow_aruco_marker.py",
         name="follow_aruco_marker",
         output="screen",
+        #arguments=['--ros-args', '--log-level', 'debug'],  # <-- Add this line
     )
 
     ar_moveit_launch = PythonLaunchDescriptionSource(
@@ -97,5 +106,6 @@ def generate_launch_description():
             aruco_recognition_node,
             follow_aruco_node,
             ar_moveit,
+            move_ar2_node  
         ]
     )

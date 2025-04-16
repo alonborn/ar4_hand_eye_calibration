@@ -14,7 +14,9 @@ from geometry_msgs.msg import Pose
 from ros2_aruco_interfaces.msg import ArucoMarkers
 from tf2_geometry_msgs import do_transform_pose
 from pymoveit2 import MoveIt2
-
+from my_robot_interfaces.srv import MoveToPose  # Import the custom service type
+import time
+import debugpy
 
 class ArucoMarkerFollower(Node):
 
@@ -25,18 +27,22 @@ class ArucoMarkerFollower(Node):
         self.arm_joint_names = [
             "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"
         ]
-        self.moveit2 = MoveIt2(
-            node=self,
-            joint_names=self.arm_joint_names,
-            base_link_name="base_link",
-            end_effector_name="link_6",
-            group_name="ar_manipulator",
-            callback_group=ReentrantCallbackGroup(),
-        )
-        self.moveit2.planner_id = "RRTConnectkConfigDefault"
-        self.moveit2.max_velocity = 1.0
-        self.moveit2.max_acceleration = 1.0
-
+        
+        # self.moveit2 = MoveIt2(
+        #     node=self,
+        #     joint_names=self.arm_joint_names,
+        #     base_link_name="base_link",
+        #     end_effector_name="link_6",
+        #     group_name="ar_manipulator",
+        #     callback_group=ReentrantCallbackGroup(),
+        # )
+        # self.moveit2.planner_id = "RRTConnectkConfigDefault"
+        # self.moveit2.max_velocity = 1.0
+        # self.moveit2.max_acceleration = 1.0
+        self.move_completed_successfully = False
+        self.cb_group = ReentrantCallbackGroup()
+        self.move_client = self.create_client(MoveToPose,'ar_move_to_pose',callback_group=self.cb_group)
+        self.arm_is_available = True
         # ID of the aruco marker mounted on the robot
         self.marker_id = self.declare_parameter(
             "marker_id", 1).get_parameter_value().integer_value
@@ -54,8 +60,49 @@ class ArucoMarkerFollower(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self._prev_marker_pose = None
 
+    def wait_for_arm (self):
+        """Wait for the arm to be available before sending a move request."""
+        self.get_logger().info("waiting for arm to be available")
+        while not self.arm_is_available:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            time.sleep(0.01)  # Sleep for a short duration to avoid busy-waiting
+            #print ("spinning")
+
+    def response_callback(self, future):
+        try:
+            self.get_logger().info("Response callback")
+            response = future.result()
+            self.move_completed_successfully = response.success
+            # Logging the status and message from the response
+            #self.get_logger().info(f'Response Status: {response.success}')
+            #self.get_logger().info(f'Response Message: {response.message}')
+            self.arm_is_available = True
+        except Exception as e:
+            self.get_logger().error(f'Service call failed: {str(e)}')
+
+    def send_move_request(self, pose):
+        # Create a request
+        request = MoveToPose.Request()
+        request.pose = pose
+        
+        # Send the request
+        self.arm_is_available = False
+        self.get_logger().info("Sending move request")
+        future = self.move_client.call_async(request)
+        self.get_logger().info("Waiting for move request to complete")
+        future.add_done_callback(self.response_callback)
+        #self.move_client.call_async(request).add_done_callback(self.response_callback)
+              
+        # Add a callback to be executed when the future is complete
+        
+        self.wait_for_arm()
+        self.get_logger().info("Move request done")
+
     def handle_aruco_markers(self, msg: ArucoMarkers):
+        self.get_logger().info("Received aruco markers")
         cal_marker_pose = None
+        if (not self.arm_is_available):
+            return
         for i, marker_id in enumerate(msg.marker_ids):
             if marker_id == self.marker_id:
                 cal_marker_pose = msg.poses[i]
@@ -89,7 +136,8 @@ class ArucoMarkerFollower(Node):
             return
 
         self.logger.info(f"Following marker at pose: {transformed_pose}")
-        self.move_to(transformed_pose)
+        # self.move_to(transformed_pose)
+        self.send_move_request(transformed_pose)
 
     def _transform_pose(self, pose: Pose, source_frame,
                         target_frame: str) -> Pose: 
@@ -117,12 +165,20 @@ class ArucoMarkerFollower(Node):
         pose_goal = PoseStamped()
         pose_goal.header.frame_id = "base_link"
         pose_goal.pose = msg
+        
+        self.send_move_request(pose_goal)
 
-        self.moveit2.move_to_pose(pose=pose_goal)
-        self.moveit2.wait_until_executed()
+        # self.moveit2.move_to_pose(pose=pose_goal)
+        # self.moveit2.wait_until_executed()
 
 
 def main():
+
+    # debugpy.listen(("0.0.0.0", 5678))
+    # print("Waiting for debugger to attach...")
+    # debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
+    # print("debugger attached")
+        
     rclpy.init()
     node = ArucoMarkerFollower()
     executor = MultiThreadedExecutor(4)
