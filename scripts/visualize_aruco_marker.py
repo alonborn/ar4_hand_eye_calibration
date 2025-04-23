@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
-
+from collections import defaultdict, deque
 
 class ArucoPoseEstimator(Node):
     """Node to estimate the pose of ArUco markers in the camera image.
@@ -14,6 +14,8 @@ class ArucoPoseEstimator(Node):
     
     ros2 run image_view image_view image:=/aruco_image 
     """
+
+
 
     def __init__(self):
         super().__init__('aruco_pose_estimator')
@@ -48,6 +50,11 @@ class ArucoPoseEstimator(Node):
         self.image_publisher = self.create_publisher(Image, '/aruco_image', 10)
         self.get_logger().info(f"initialization complete")
 
+
+        self.pose_buffer_size = 30  # Or whatever you want
+        self.tvecs_buffer = defaultdict(lambda: deque(maxlen=self.pose_buffer_size))
+        self.rvecs_buffer = defaultdict(lambda: deque(maxlen=self.pose_buffer_size))
+
     def camera_info_callback(self, msg):
         # Extract camera matrix and distortion coefficients from CameraInfo message
         K = np.array(msg.k).reshape(3, 3)  # Intrinsic parameters
@@ -78,9 +85,17 @@ class ArucoPoseEstimator(Node):
             cv_image, self.aruco_dict)
 
         if ids is not None:
+
+
             rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
                 corners, 0.1, self.camera_matrix,
                 self.dist_coeffs)  # 0.1 is marker size
+            
+            for i, marker_id in enumerate(ids.flatten()):
+                # This is the 3D center of the marker in camera coordinate system
+                center_3d = tvecs[i][0]  # shape: (3,)
+                x, y, z = center_3d
+                self.get_logger().info(f"ID {marker_id} cen:x={x:.3f},y={y:.3f},z={z:.3f}")
 
             for i in range(len(ids)):
                 cv2.aruco.drawDetectedMarkers(cv_image, corners, ids)
@@ -91,6 +106,44 @@ class ArucoPoseEstimator(Node):
             overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
             self.image_publisher.publish(overlay_msg)
             
+        except Exception as e:
+            self.get_logger().error(f"Error publishing image: {e}")
+
+    def image_callback2(self, msg):
+        if not self.camera_info_received:
+            self.get_logger().warn("Waiting for camera info...")
+            return
+
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        except Exception as e:
+            self.get_logger().error(f"Error converting image: {e}")
+            return
+
+        corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(cv_image, self.aruco_dict)
+
+        if ids is not None:
+            rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
+                corners, 0.1, self.camera_matrix, self.dist_coeffs
+            )
+
+            for i, marker_id in enumerate(ids.flatten()):
+                # Update buffers
+                self.tvecs_buffer[marker_id].append(tvecs[i][0])
+                self.rvecs_buffer[marker_id].append(rvecs[i][0])
+
+                # Compute averages
+                avg_tvec = np.mean(self.tvecs_buffer[marker_id], axis=0)
+                avg_rvec = np.mean(self.rvecs_buffer[marker_id], axis=0)
+
+                # Draw
+                cv2.aruco.drawDetectedMarkers(cv_image, corners, ids)
+                cv2.drawFrameAxes(cv_image, self.camera_matrix,
+                                self.dist_coeffs, avg_rvec, avg_tvec, 0.1)
+
+        try:
+            overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
+            self.image_publisher.publish(overlay_msg)
         except Exception as e:
             self.get_logger().error(f"Error publishing image: {e}")
 

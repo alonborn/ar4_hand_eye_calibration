@@ -17,6 +17,8 @@ from pymoveit2 import MoveIt2
 from my_robot_interfaces.srv import MoveToPose  # Import the custom service type
 import time
 import debugpy
+import transforms3d
+
 
 class ArucoMarkerFollower(Node):
 
@@ -41,18 +43,16 @@ class ArucoMarkerFollower(Node):
         # self.moveit2.max_acceleration = 1.0
         self.move_completed_successfully = False
         self.cb_group = ReentrantCallbackGroup()
+        self.cb_group_aruco_marker = ReentrantCallbackGroup()
+
         self.move_client = self.create_client(MoveToPose,'ar_move_to_pose',callback_group=self.cb_group)
         self.arm_is_available = True
         # ID of the aruco marker mounted on the robot
         self.marker_id = self.declare_parameter(
             "marker_id", 1).get_parameter_value().integer_value
 
-        self.subscription = self.create_subscription(ArucoMarkers,
-                                                     "/aruco_markers",
-                                                     self.handle_aruco_markers,
-                                                     1)
-        self.pose_pub = self.create_publisher(PoseStamped, "/cal_marker_pose",
-                                              1)
+        self.subscription = self.create_subscription(ArucoMarkers,"/aruco_markers",self.handle_aruco_markers,1,callback_group=self.cb_group_aruco_marker)
+        self.pose_pub = self.create_publisher(PoseStamped, "/cal_marker_pose",1)
 
         self.target_pose_pub = self.create_publisher(
             PoseStamped, "/follow_aruco_target_pose", 1)
@@ -60,11 +60,19 @@ class ArucoMarkerFollower(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self._prev_marker_pose = None
 
+        # Timer: callback every 2.0 seconds
+        # self.timer_callback_group = ReentrantCallbackGroup()
+        # self.timer = self.create_timer(2.0, self.timer_callback,callback_group=self.timer_callback_group)
+
+    # def timer_callback(self):
+    #     self.get_logger().info('ROS loop is alive!')
+
+
     def wait_for_arm (self):
         """Wait for the arm to be available before sending a move request."""
         self.get_logger().info("waiting for arm to be available")
         while not self.arm_is_available:
-            rclpy.spin_once(self, timeout_sec=0.1)
+            #rclpy.spin_once(self, timeout_sec=0.1) 
             time.sleep(0.01)  # Sleep for a short duration to avoid busy-waiting
             #print ("spinning")
 
@@ -135,6 +143,23 @@ class ArucoMarkerFollower(Node):
             self.logger.error(f"Error transforming pose: {e}")
             return
 
+        # first flip the pose up side down
+
+        quat = [
+            transformed_pose.orientation.w,
+            transformed_pose.orientation.x,
+            transformed_pose.orientation.y,
+            transformed_pose.orientation.z,
+        ]
+        x_180_deg_quat = [0, 1, 0, 0]
+        flipped_quat = transforms3d.quaternions.qmult(quat, x_180_deg_quat)
+        transformed_pose.orientation.w = flipped_quat[0]
+        transformed_pose.orientation.x = flipped_quat[1]
+        transformed_pose.orientation.y = flipped_quat[2]
+        transformed_pose.orientation.z = flipped_quat[3]
+
+        transformed_pose.position.z += 0.09        
+
         self.logger.info(f"Following marker at pose: {transformed_pose}")
         # self.move_to(transformed_pose)
         self.send_move_request(transformed_pose)
@@ -181,7 +206,7 @@ def main():
         
     rclpy.init()
     node = ArucoMarkerFollower()
-    executor = MultiThreadedExecutor(4)
+    executor = MultiThreadedExecutor(7)
     executor.add_node(node)
     try:
         executor.spin()

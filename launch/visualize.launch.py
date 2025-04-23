@@ -62,24 +62,17 @@ def generate_launch_description():
         "tracking_marker_frame": "calibration_aruco",
     }
 
-    calibration_aruco_publisher = Node(
+    visualize_aruco = Node(
         package="ar4_hand_eye_calibration",
-        executable="calibration_aruco_publisher.py",
-        name="calibration_aruco_publisher",
+        executable="visualize_aruco_marker.py",
+        name="visualize_aruco_marker",
         output="screen",
-        parameters=[
-            {
-                "tracking_base_frame": calibration_args["tracking_base_frame"],
-                "tracking_marker_frame": calibration_args["tracking_marker_frame"],
-                "marker_id": 1,
-            }
-        ],
     )
     
     move_ar2_node = Node(
         package="ar_utils",
-        executable="move_ar",
-        name="move_ar",
+        executable="move_ar2",
+        name="move_ar2",
         output="screen"
     )
 
@@ -105,11 +98,11 @@ def generate_launch_description():
     )
     
     ld = LaunchDescription()
-    ld.add_action(realsense)
-    ld.add_action(static_tf_publisher)
-    ld.add_action(ar_moveit)
-    ld.add_action(aruco_recognition_node)
-    ld.add_action(calibration_aruco_publisher)
-    ld.add_action(easy_handeye2)
-    ld.add_action(move_ar2_node)
+    #ld.add_action(realsense)
+    #ld.add_action(static_tf_publisher)
+    #ld.add_action(ar_moveit)
+    #ld.add_action(aruco_recognition_node)
+    ld.add_action(visualize_aruco)
+    #ld.add_action(easy_handeye2)
+    #ld.add_action(move_ar2_node)
     return ld
