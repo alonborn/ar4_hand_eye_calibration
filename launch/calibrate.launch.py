@@ -78,8 +78,8 @@ def generate_launch_description():
     
     move_ar2_node = Node(
         package="ar_utils",
-        executable="move_ar",
-        name="move_ar",
+        executable="move_ar3",
+        name="move_ar3",
         output="screen"
     )
 
@@ -111,5 +111,5 @@ def generate_launch_description():
     ld.add_action(aruco_recognition_node)
     ld.add_action(calibration_aruco_publisher)
     ld.add_action(easy_handeye2)
-    ld.add_action(move_ar2_node)
+    #ld.add_action(move_ar2_node)
     return ld

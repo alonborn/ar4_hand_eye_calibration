@@ -6,6 +6,8 @@ import numpy as np
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 from collections import defaultdict, deque
+from geometry_msgs.msg import Point
+import debugpy
 
 class ArucoPoseEstimator(Node):
     """Node to estimate the pose of ArUco markers in the camera image.
@@ -14,8 +16,6 @@ class ArucoPoseEstimator(Node):
     
     ros2 run image_view image_view image:=/aruco_image 
     """
-
-
 
     def __init__(self):
         super().__init__('aruco_pose_estimator')
@@ -26,7 +26,7 @@ class ArucoPoseEstimator(Node):
         self.image_subscription = self.create_subscription(
             Image,
             '/camera/camera/color/image_raw',  # Correct topic
-            self.image_callback,
+            self.image_callback2,
             10)
 
         # CameraInfo subscriber for color camera
@@ -36,6 +36,10 @@ class ArucoPoseEstimator(Node):
             self.camera_info_callback,
             10)
         self.camera_info_received = False  # Flag to track if we have camera info
+
+
+        # Service to provide latest Aruco marker pose
+        self.pose_publisher = self.create_publisher(Point, '/aruco_pose', 10)
 
         # Initialize camera parameters (will be filled from CameraInfo)
         self.camera_matrix = None
@@ -54,6 +58,7 @@ class ArucoPoseEstimator(Node):
         self.pose_buffer_size = 30  # Or whatever you want
         self.tvecs_buffer = defaultdict(lambda: deque(maxlen=self.pose_buffer_size))
         self.rvecs_buffer = defaultdict(lambda: deque(maxlen=self.pose_buffer_size))
+
 
     def camera_info_callback(self, msg):
         # Extract camera matrix and distortion coefficients from CameraInfo message
@@ -91,16 +96,17 @@ class ArucoPoseEstimator(Node):
                 corners, 0.1, self.camera_matrix,
                 self.dist_coeffs)  # 0.1 is marker size
             
-            for i, marker_id in enumerate(ids.flatten()):
-                # This is the 3D center of the marker in camera coordinate system
-                center_3d = tvecs[i][0]  # shape: (3,)
-                x, y, z = center_3d
-                self.get_logger().info(f"ID {marker_id} cen:x={x:.3f},y={y:.3f},z={z:.3f}")
+            # for i, marker_id in enumerate(ids.flatten()):
+            #     # This is the 3D center of the marker in camera coordinate system
+            #     center_3d = tvecs[i][0]  # shape: (3,)
+            #     x, y, z = center_3d
+            #     self.get_logger().info(f"ID {marker_id} cen:x={x:.3f},y={y:.3f},z={z:.3f}")
 
             for i in range(len(ids)):
                 cv2.aruco.drawDetectedMarkers(cv_image, corners, ids)
                 cv2.drawFrameAxes(cv_image, self.camera_matrix,
                                   self.dist_coeffs, rvecs[i], tvecs[i], 0.1)
+                                  
 
         try:
             overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
@@ -120,7 +126,7 @@ class ArucoPoseEstimator(Node):
             self.get_logger().error(f"Error converting image: {e}")
             return
 
-        corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(cv_image, self.aruco_dict)
+        corners, ids, _ = cv2.aruco.detectMarkers(cv_image, self.aruco_dict)
 
         if ids is not None:
             rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
@@ -128,18 +134,26 @@ class ArucoPoseEstimator(Node):
             )
 
             for i, marker_id in enumerate(ids.flatten()):
-                # Update buffers
                 self.tvecs_buffer[marker_id].append(tvecs[i][0])
                 self.rvecs_buffer[marker_id].append(rvecs[i][0])
 
-                # Compute averages
+                # Compute average pose
                 avg_tvec = np.mean(self.tvecs_buffer[marker_id], axis=0)
                 avg_rvec = np.mean(self.rvecs_buffer[marker_id], axis=0)
 
-                # Draw
+                # Draw smoothed pose on image
                 cv2.aruco.drawDetectedMarkers(cv_image, corners, ids)
                 cv2.drawFrameAxes(cv_image, self.camera_matrix,
-                                self.dist_coeffs, avg_rvec, avg_tvec, 0.1)
+                                  self.dist_coeffs, avg_rvec, avg_tvec, 0.1)
+
+                # Publish the smoothed 3D position
+                point_msg = Point()
+                point_msg.x = float(avg_tvec[0])
+                point_msg.y = float(avg_tvec[1])
+                point_msg.z = float(avg_tvec[2])
+                self.pose_publisher.publish(point_msg)
+
+                #self.get_logger().info(f"Published ArUco {marker_id} pose: ({point_msg.x:.3f}, {point_msg.y:.3f}, {point_msg.z:.3f})")
 
         try:
             overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
@@ -149,6 +163,11 @@ class ArucoPoseEstimator(Node):
 
 
 def main(args=None):
+    # debugpy.listen(("localhost", 5678))  # Port for debugger to connect
+    # print("Waiting for debugger to attach...")
+    # debugpy.wait_for_client()  # Ensures the debugger connects before continuing
+    # print("Debugger connected.")
+
     rclpy.init(args=args)
     aruco_pose_estimator = ArucoPoseEstimator()
     rclpy.spin(aruco_pose_estimator)
