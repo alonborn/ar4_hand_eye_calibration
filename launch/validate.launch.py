@@ -21,16 +21,9 @@ def generate_launch_description():
     ar_model_config = LaunchConfiguration("ar_model")
     ar_model_arg = DeclareLaunchArgument(
         "ar_model",
-        default_value="mk1",
+        default_value="mk3",
         choices=["mk1", "mk2", "mk3"],
         description="Model of AR4",
-    )
-
-    move_ar2_node = Node(
-        package="ar_utils",
-        executable="move_ar2",
-        name="move_ar2",
-        output="screen"
     )
 
     realsense = IncludeLaunchDescription(
@@ -42,15 +35,7 @@ def generate_launch_description():
                     "rs_launch.py",
                 )
             ]
-        ),
-        launch_arguments={
-            "color_width": "640",
-            "color_height": "480",
-            "color_fps": "15",
-            "enable_infra1": "false",
-            "enable_infra2": "false",
-            "initial_reset": "true"
-        }.items()
+        )
     )
 
     aruco_params = os.path.join(
@@ -105,7 +90,6 @@ def generate_launch_description():
             hand_eye_tf_publisher,
             aruco_recognition_node,
             follow_aruco_node,
-            ar_moveit,
-            move_ar2_node  
+            ar_moveit
         ]
     )

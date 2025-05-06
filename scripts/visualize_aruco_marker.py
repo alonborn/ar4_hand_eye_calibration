@@ -8,6 +8,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from collections import defaultdict, deque
 from geometry_msgs.msg import Point
 import debugpy
+import copy
 
 class ArucoPoseEstimator(Node):
     """Node to estimate the pose of ArUco markers in the camera image.
@@ -58,6 +59,7 @@ class ArucoPoseEstimator(Node):
         self.pose_buffer_size = 30  # Or whatever you want
         self.tvecs_buffer = defaultdict(lambda: deque(maxlen=self.pose_buffer_size))
         self.rvecs_buffer = defaultdict(lambda: deque(maxlen=self.pose_buffer_size))
+        self.camera_info_publisher = self.create_publisher(CameraInfo, '/camera_info', 10)
 
 
     def camera_info_callback(self, msg):
@@ -74,6 +76,9 @@ class ArucoPoseEstimator(Node):
         # Unsubscribe after receiving the information (optional, but good practice)
         self.destroy_subscription(
             self.camera_info_subscription)  # No need to keep listening
+        self.camera_info_msg = msg  # Save the latest one
+        self.camera_info_publisher.publish(msg)
+
 
     def image_callback(self, msg):
         if not self.camera_info_received:  # Don't process until we have camera info
@@ -115,6 +120,7 @@ class ArucoPoseEstimator(Node):
         except Exception as e:
             self.get_logger().error(f"Error publishing image: {e}")
 
+
     def image_callback2(self, msg):
         if not self.camera_info_received:
             self.get_logger().warn("Waiting for camera info...")
@@ -137,29 +143,31 @@ class ArucoPoseEstimator(Node):
                 self.tvecs_buffer[marker_id].append(tvecs[i][0])
                 self.rvecs_buffer[marker_id].append(rvecs[i][0])
 
-                # Compute average pose
                 avg_tvec = np.mean(self.tvecs_buffer[marker_id], axis=0)
                 avg_rvec = np.mean(self.rvecs_buffer[marker_id], axis=0)
 
-                # Draw smoothed pose on image
                 cv2.aruco.drawDetectedMarkers(cv_image, corners, ids)
-                cv2.drawFrameAxes(cv_image, self.camera_matrix,
-                                  self.dist_coeffs, avg_rvec, avg_tvec, 0.1)
+                cv2.drawFrameAxes(cv_image, self.camera_matrix, self.dist_coeffs, avg_rvec, avg_tvec, 0.1)
 
-                # Publish the smoothed 3D position
-                point_msg = Point()
-                point_msg.x = float(avg_tvec[0])
-                point_msg.y = float(avg_tvec[1])
-                point_msg.z = float(avg_tvec[2])
+                point_msg = Point(x=float(avg_tvec[0]), y=float(avg_tvec[1]), z=float(avg_tvec[2]))
                 self.pose_publisher.publish(point_msg)
-
-                #self.get_logger().info(f"Published ArUco {marker_id} pose: ({point_msg.x:.3f}, {point_msg.y:.3f}, {point_msg.z:.3f})")
 
         try:
             overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
+            overlay_msg.header.stamp = msg.header.stamp
+            overlay_msg.header.frame_id = msg.header.frame_id or "camera_color_optical_frame"  # fallback default
             self.image_publisher.publish(overlay_msg)
+
+            if hasattr(self, 'camera_info_msg'):
+                # ✅ Deep copy to avoid mutating original
+                camera_info_copy = copy.deepcopy(self.camera_info_msg)
+                camera_info_copy.header.stamp = msg.header.stamp
+                camera_info_copy.header.frame_id = msg.header.frame_id or "camera_color_optical_frame"
+                self.camera_info_publisher.publish(camera_info_copy)
+
         except Exception as e:
-            self.get_logger().error(f"Error publishing image: {e}")
+            self.get_logger().error(f"Error publishing overlay image or camera info: {e}")
+
 
 
 def main(args=None):

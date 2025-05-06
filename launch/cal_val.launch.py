@@ -8,6 +8,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
 def generate_launch_description():
+    # Realsense camera
     realsense = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             [
@@ -20,6 +21,7 @@ def generate_launch_description():
         )
     )
 
+    # MoveIt2 launch with updated RViz config
     ar_moveit_launch = PythonLaunchDescriptionSource(
         [
             os.path.join(
@@ -32,17 +34,17 @@ def generate_launch_description():
     rviz_config_file = os.path.join(
         get_package_share_directory("ar4_hand_eye_calibration"),
         "rviz",
-        "moveit_with_camera.rviz",
+        "validate.rviz",  # <-- using the richer config
     )
     ar_moveit_args = {
         "include_gripper": "False",
         "rviz_config_file": rviz_config_file,
     }.items()
-    
     ar_moveit = IncludeLaunchDescription(
         ar_moveit_launch, launch_arguments=ar_moveit_args
     )
 
+    # ArUco detection node
     aruco_params = os.path.join(
         get_package_share_directory("ar4_hand_eye_calibration"),
         "config",
@@ -52,6 +54,15 @@ def generate_launch_description():
         package="ros2_aruco", executable="aruco_node", parameters=[aruco_params]
     )
 
+    # Static transform: world -> camera_link
+    static_tf_publisher = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        arguments=["0", "0", "0", "0", "0", "0", "world", "camera_link"],
+        output="screen",
+    )
+
+    # Calibration marker pose publisher
     calibration_args = {
         "name": "ar4_calibration",
         "calibration_type": "eye_on_base",
@@ -75,6 +86,7 @@ def generate_launch_description():
         ],
     )
 
+    # Easy Handeye calibration launch
     easy_handeye2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             [
@@ -88,14 +100,24 @@ def generate_launch_description():
         launch_arguments=calibration_args.items(),
     )
 
-    # static transform publisher for camera_link to world
-    static_tf_publisher = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        arguments=["0", "0", "0", "0", "0", "0", "world", "camera_link"],
+    # ArUco follower node (added from validate.launch)
+    follow_aruco_node = Node(
+        package="ar4_hand_eye_calibration",
+        executable="follow_aruco_marker.py",
+        name="follow_aruco_marker",
+        output="screen",
+        # Uncomment below for debug logging
+        # arguments=['--ros-args', '--log-level', 'debug'],
+    )
+
+    visualize_aruco = Node(
+        package="ar4_hand_eye_calibration",
+        executable="visualize_aruco_marker.py",
+        name="visualize_aruco_marker",
         output="screen",
     )
     
+   
     ld = LaunchDescription()
     ld.add_action(realsense)
     ld.add_action(static_tf_publisher)
@@ -103,4 +125,6 @@ def generate_launch_description():
     ld.add_action(aruco_recognition_node)
     ld.add_action(calibration_aruco_publisher)
     ld.add_action(easy_handeye2)
+    ld.add_action(visualize_aruco)
+    ld.add_action(follow_aruco_node)  # Newly added
     return ld
