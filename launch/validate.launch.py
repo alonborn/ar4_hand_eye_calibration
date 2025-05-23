@@ -35,7 +35,12 @@ def generate_launch_description():
                     "rs_launch.py",
                 )
             ]
-        )
+        ),
+        launch_arguments={
+            "pointcloud.enable": "true",
+            "depth_module.profile": "640x480x30",
+            "rgb_camera.profile": "640x480x30",
+        }.items()
     )
 
     aruco_params = os.path.join(
@@ -53,6 +58,13 @@ def generate_launch_description():
         name="handeye_publisher",
         parameters=[{"calibration_name": "ar4_calibration"}],
     )
+
+    move_ar = Node(
+            package='ar_utils',
+            executable='move_ar',
+            name='move_ar_node',
+            output='screen'
+        )
 
     follow_aruco_node = Node(
         package="ar4_hand_eye_calibration",
@@ -90,6 +102,7 @@ def generate_launch_description():
             hand_eye_tf_publisher,
             aruco_recognition_node,
             follow_aruco_node,
-            ar_moveit
+            ar_moveit,
+            move_ar
         ]
     )
