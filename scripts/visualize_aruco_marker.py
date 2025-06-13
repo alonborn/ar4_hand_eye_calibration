@@ -79,48 +79,6 @@ class ArucoPoseEstimator(Node):
         self.camera_info_msg = msg  # Save the latest one
         self.camera_info_publisher.publish(msg)
 
-
-    def image_callback(self, msg):
-        if not self.camera_info_received:  # Don't process until we have camera info
-            self.get_logger().warn("Waiting for camera info...")
-            return
-
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        except Exception as e:
-            self.get_logger().error(f"Error converting image: {e}")
-            return
-
-        corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(
-            cv_image, self.aruco_dict)
-
-        if ids is not None:
-
-
-            rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
-                corners, 0.1, self.camera_matrix,
-                self.dist_coeffs)  # 0.1 is marker size
-            
-            # for i, marker_id in enumerate(ids.flatten()):
-            #     # This is the 3D center of the marker in camera coordinate system
-            #     center_3d = tvecs[i][0]  # shape: (3,)
-            #     x, y, z = center_3d
-            #     self.get_logger().info(f"ID {marker_id} cen:x={x:.3f},y={y:.3f},z={z:.3f}")
-
-            for i in range(len(ids)):
-                cv2.aruco.drawDetectedMarkers(cv_image, corners, ids)
-                cv2.drawFrameAxes(cv_image, self.camera_matrix,
-                                  self.dist_coeffs, rvecs[i], tvecs[i], 0.1)
-                                  
-
-        try:
-            overlay_msg = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
-            self.image_publisher.publish(overlay_msg)
-            
-        except Exception as e:
-            self.get_logger().error(f"Error publishing image: {e}")
-
-
     def image_callback2(self, msg):
         if not self.camera_info_received:
             self.get_logger().warn("Waiting for camera info...")

@@ -88,21 +88,26 @@ class ArucoMarkerFollower(Node):
             if cal_marker_pose is None:
                 return
 
-            #only start following if the marker pose has changed by at least 2cm
-            if self._prev_marker_pose is not None:
-                if ((cal_marker_pose.position.x - self._prev_marker_pose.position.x)**2 +
-                    (cal_marker_pose.position.y - self._prev_marker_pose.position.y)**2 +
-                    (cal_marker_pose.position.z - self._prev_marker_pose.position.z)**2 > 0.02**2):
-                    self._prev_marker_pose = cal_marker_pose
-                    return
-
-            self._prev_marker_pose = cal_marker_pose
 
             # get pose in robot base frame
             try:
                 transformed_pose = self._transform_pose(cal_marker_pose,
                                                         "camera_color_optical_frame",
                                                         "base_link")
+                
+                #only start following if the marker pose has changed by at least 2cm
+                if self._prev_marker_pose is not None:
+                    dist = (transformed_pose.position.x - self._prev_marker_pose.position.x)**2 + (transformed_pose.position.y - self._prev_marker_pose.position.y)**2 + (transformed_pose.position.z - self._prev_marker_pose.position.z)**2 
+                    if (dist > 0.02**2):
+                        self._prev_marker_pose = transformed_pose
+                        return
+                    # if (dist < 0.005**2):
+                    #     self._prev_marker_pose = transformed_pose
+                    #     self.logger.info(f"Marker pose has not changed enough to follow: {dist}")
+                    #     return
+                
+                self._prev_marker_pose = transformed_pose
+
             except tf2_ros.LookupException as e:
                 self.logger.error(f"Error transforming pose: {e}")
                 return
@@ -194,10 +199,10 @@ class ArucoMarkerFollower(Node):
         future.add_done_callback(self.handle_response)
 
 def main():
-    # debugpy.listen(("0.0.0.0", 5678))
-    # print("Waiting for debugger to attach...")
-    # debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
-    # print("debugger attached")
+    debugpy.listen(("0.0.0.0", 5678))
+    print("Waiting for debugger to attach...")
+    debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
+    print("debugger attached")
 
     rclpy.init()
     node = ArucoMarkerFollower()
