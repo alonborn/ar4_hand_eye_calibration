@@ -14,6 +14,7 @@ install (PROGRAMS
   scripts/follow_aruco_marker.py
   scripts/handeye_publisher.py
   scripts/visualize_aruco_marker.py
+  scripts/visualize_aruco_marker2.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

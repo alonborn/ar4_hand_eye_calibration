@@ -32,7 +32,7 @@ def generate_launch_description():
     rviz_config_file = os.path.join(
         get_package_share_directory("ar4_hand_eye_calibration"),
         "rviz",
-        "moveit_with_camera.rviz",
+        "moveit_with_camera2.rviz",
     )
     ar_moveit_args = {
         "include_gripper": "False",
@@ -50,6 +50,13 @@ def generate_launch_description():
     )
     aruco_recognition_node = Node(
         package="ros2_aruco", executable="aruco_node", parameters=[aruco_params]
+    )
+
+    visualize_aruco = Node(
+        package="ar4_hand_eye_calibration",
+        executable="visualize_aruco_marker2.py",
+        name="visualize_aruco_marker2",
+        output="screen",
     )
 
     calibration_args = {
@@ -103,4 +110,5 @@ def generate_launch_description():
     ld.add_action(aruco_recognition_node)
     ld.add_action(calibration_aruco_publisher)
     ld.add_action(easy_handeye2)
+    ld.add_action(visualize_aruco)
     return ld
