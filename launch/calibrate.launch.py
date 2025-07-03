@@ -102,6 +102,19 @@ def generate_launch_description():
         arguments=["0", "0", "0", "0", "0", "0", "world", "camera_link"],
         output="screen",
     )
+
+    dialog_example_node = Node(
+            package='dialog_example',
+            executable='dialog_node',
+            name='dialog_node_gui',
+            output='screen'
+        )
+    ar_utils_node = Node(
+            package='ar_utils',
+            executable='move_ar',
+            name='move_ar_node',
+            output='screen'
+        )
     
     ld = LaunchDescription()
     ld.add_action(realsense)
@@ -111,4 +124,6 @@ def generate_launch_description():
     ld.add_action(calibration_aruco_publisher)
     ld.add_action(easy_handeye2)
     ld.add_action(visualize_aruco)
+    # ld.add_action(dialog_example_node)
+    # ld.add_action(ar_utils_node)
     return ld

@@ -39,7 +39,7 @@ class ArucoPoseVisualizer(Node):
 
     def aruco_markers_callback(self, msg):
         self.latest_markers = msg
-        self.get_logger().info(f"Received {len(msg.poses)} markers.")
+        # self.get_logger().info(f"Received {len(msg.poses)} markers.")
 
     def image_callback(self, msg):
         if self.camera_matrix is None:

@@ -7,7 +7,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
-
+import threading
 import tf2_ros
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Pose
@@ -25,12 +25,13 @@ class ArucoMarkerFollower(Node):
     def __init__(self):
         super().__init__("aruco_marker_follower")
         self.logger = self.get_logger()
-        self.tmp = 0
+        
         self.arm_joint_names = [
             "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"
         ]
         self.follower_enabled = True 
         self.is_processing_marker = False
+        self.processing_lock = threading.Lock()
         # self.moveit2 = MoveIt2(
         #     node=self,
         #     joint_names=self.arm_joint_names,
@@ -74,9 +75,22 @@ class ArucoMarkerFollower(Node):
         self.get_logger().info('ROS loop is alive!')
 
     def handle_aruco_markers(self, msg: ArucoMarkers):
-        if not self.follower_enabled or self.is_processing_marker:
+
+        acquired = self.processing_lock.acquire(blocking=False)
+        if not acquired:
+            self.logger.info("Already processing a marker, skipping this callback.")
             return
+
+        if not self.follower_enabled:
+            self.logger.info("Follower disabled; skipping marker processing.")
+            self.release_processing()
+            return
+
         self.is_processing_marker = True
+        self.logger.info(f"Processing marker with ID: {self.marker_id}")
+
+
+
         cal_marker_pose = None
         for i, marker_id in enumerate(msg.marker_ids):
             if marker_id == self.marker_id:
@@ -127,13 +141,19 @@ class ArucoMarkerFollower(Node):
             transformed_pose.orientation.y = flipped_quat[2]
             transformed_pose.orientation.z = flipped_quat[3]
 
-            transformed_pose.position.z += 0.04
+            transformed_pose.position.z += 0.10
 
             self.logger.info(f"Following marker at pose: {transformed_pose}")
             self.move_to(transformed_pose)
         finally:
-            self.is_processing_marker = False
-
+            self.logger.info(("Finished processing marker with ID: " f"{self.marker_id}"))
+            # self.is_processing_marker = False
+    def release_processing(self):
+        if self.processing_lock.locked():
+            self.processing_lock.release()
+        self.is_processing_marker = False
+        self.joint_states_enabled = True
+        
     def _transform_pose(self, pose: Pose, source_frame,
                         target_frame: str) -> Pose:
         # Get the transform from source frame to target frame
@@ -168,41 +188,55 @@ class ArucoMarkerFollower(Node):
         #     self.tmp = 1
         #     msg = Pose(position = Point(x=0.03,y=-0.33,z=0.32),orientation = Quaternion(x=0.4263,y=0.0428,z=0.0902,w=0.899))
 
-        self.send_move_request(pose=msg,is_cartesian=False)
+        self.send_move_request(pose=msg,is_cartesian=True)
         # self.moveit2.move_to_pose(pose=pose_goal)
         # self.moveit2.wait_until_executed()
 
     def send_move_request(self, pose, is_cartesian=True):
         self.joint_states_enabled = False
-        # pose_goal = PoseStamped() 
-        # pose_goal.header.frame_id = "base_link"
-        # pose_goal.pose = Pose(position = pose.position, orientation = pose.orientation)
-        pose = Pose(position = pose.position, orientation = pose.orientation)
-        print ("starting to move")
+
+        # Construct the request
+        pose = Pose(position=pose.position, orientation=pose.orientation)
+        self.logger.info("Starting move request")
 
         request = self.get_request(pose, is_cartesian=is_cartesian)
-        # Send the request
-        response = self.call_service_blocking(self.move_arm_client, request, timeout_sec=30.0)
-        print("Got response:", response)
-        self.joint_states_enabled = True
-        return
 
-    def handle_response(self, future):
-        self.is_processing_marker = False
-            
-    def call_service_blocking(self, client, request, timeout_sec=10.0):
-        if not client.wait_for_service(timeout_sec=2.0):
-            self.logger.error("Service not available")
-            return None
+        # Wait for the service to be available
+        if not self.move_arm_client.wait_for_service(timeout_sec=2.0):
+            self.logger.error("MoveToPose service not available!")
+            self.release_processing()  # release lock/flag if we can't even send the request
+            return
 
-        future = client.call_async(request)
+        # Send async request and handle the response in the callback
+        future = self.move_arm_client.call_async(request)
         future.add_done_callback(self.handle_response)
 
+    # Note: do NOT release lock or reset flags here — it should only happen in handle_response
+
+
+    def handle_response(self, future):
+        try:
+            result = future.result()
+            self.logger.info(f"Move service completed successfully: {result}")
+        except Exception as e:
+            self.logger.error(f"Move service call failed: {e}")
+        finally:
+            self.logger.info(f"Finished processing marker with ID: {self.marker_id}")
+            self.release_processing()
+            
+    # def call_service_blocking(self, client, request, timeout_sec=10.0):
+    #     if not client.wait_for_service(timeout_sec=2.0):
+    #         self.logger.error("Service not available")
+    #         return None
+
+    #     future = client.call_async(request)
+    #     future.add_done_callback(self.handle_response)
+
 def main():
-    debugpy.listen(("0.0.0.0", 5678))
-    print("Waiting for debugger to attach...")
-    debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
-    print("debugger attached")
+    # debugpy.listen(("0.0.0.0", 5678))
+    # print("Waiting for debugger to attach...")
+    # debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
+    # print("debugger attached")
 
     rclpy.init()
     node = ArucoMarkerFollower()

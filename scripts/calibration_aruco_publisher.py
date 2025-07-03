@@ -28,6 +28,7 @@ class CalibrationArucoPublisher(Node):
             value="",
             descriptor=ParameterDescriptor(type=ParameterType.PARAMETER_STRING)
         )
+        
         self.tracking_marker_frame = tracking_marker_frame_p.get_parameter_value().string_value
 
         # ID of the aruco marker mounted on the robot
@@ -60,8 +61,9 @@ class CalibrationArucoPublisher(Node):
         t.transform.translation.z = cal_marker_pose.position.z
         t.transform.rotation = cal_marker_pose.orientation
 
-        # Send the transformation
+        # Send the transformationcalibration_aruco
         self.tf_broadcaster.sendTransform(t)
+        # self.get_logger().info(f"Published transform: {self.tracking_base_frame} -> {self.tracking_marker_frame}")
 
 
 def main():
