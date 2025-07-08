@@ -30,7 +30,7 @@ class ArucoMarkerFollower(Node):
             "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"
         ]
         self.follower_enabled = True 
-        self.is_processing_marker = False
+        
         self.processing_lock = threading.Lock()
         # self.moveit2 = MoveIt2(
         #     node=self,
@@ -63,7 +63,10 @@ class ArucoMarkerFollower(Node):
         # Timer: callback every 2.0 seconds
         self.timer_callback_group = ReentrantCallbackGroup()
         #self.timer = self.create_timer(1.0, self.timer_callback,callback_group=self.timer_callback_group)
-    
+        self.filtered_position = None  # holds the smoothed pose position
+        self.ema_alpha = 0.3           # tune 0.1–0.5 depending on smoothness vs responsiveness
+
+
     def get_request(self, pose, is_cartesian=True):
         # Create a request
         request = MoveToPose.Request()
@@ -86,10 +89,8 @@ class ArucoMarkerFollower(Node):
             self.release_processing()
             return
 
-        self.is_processing_marker = True
+        
         self.logger.info(f"Processing marker with ID: {self.marker_id}")
-
-
 
         cal_marker_pose = None
         for i, marker_id in enumerate(msg.marker_ids):
@@ -105,14 +106,34 @@ class ArucoMarkerFollower(Node):
 
             # get pose in robot base frame
             try:
+                self.logger.info(f"-----------------------(1)cal_marker_pose: {cal_marker_pose}")
                 transformed_pose = self._transform_pose(cal_marker_pose,
                                                         "camera_color_optical_frame",
                                                         "base_link")
-                
+                self.logger.info(f"-----------------------(2)Transformed pose: {transformed_pose}")
+                self.get_logger().info(f"Transformed pose (after _transform_pose): {transformed_pose}")
+                pos = transformed_pose.position
+
+                if self.filtered_position is None:
+                    # first run: initialize filter
+                    self.filtered_position = [pos.x, pos.y, pos.z]
+                else:
+                    # update filter with EMA
+                    self.filtered_position[0] = self.ema_alpha * pos.x + (1 - self.ema_alpha) * self.filtered_position[0]
+                    self.filtered_position[1] = self.ema_alpha * pos.y + (1 - self.ema_alpha) * self.filtered_position[1]
+                    self.filtered_position[2] = self.ema_alpha * pos.z + (1 - self.ema_alpha) * self.filtered_position[2]
+
+                # update transformed_pose with filtered position
+                transformed_pose.position.x = self.filtered_position[0]
+                transformed_pose.position.y = self.filtered_position[1]
+                transformed_pose.position.z = self.filtered_position[2]
+
+
                 #only start following if the marker pose has changed by at least 2cm
                 if self._prev_marker_pose is not None:
                     dist = (transformed_pose.position.x - self._prev_marker_pose.position.x)**2 + (transformed_pose.position.y - self._prev_marker_pose.position.y)**2 + (transformed_pose.position.z - self._prev_marker_pose.position.z)**2 
-                    if (dist > 0.02**2):
+                    self.logger.info(f"Distance to previous marker pose: {dist}")
+                    if (dist > 0.05**2):
                         self._prev_marker_pose = transformed_pose
                         return
                     # if (dist < 0.005**2):
@@ -128,6 +149,7 @@ class ArucoMarkerFollower(Node):
 
             # first flip the pose up side down
 
+            self.logger.info(f"Transformed pose: {transformed_pose}")
             quat = [
                 transformed_pose.orientation.w,
                 transformed_pose.orientation.x,
@@ -143,38 +165,67 @@ class ArucoMarkerFollower(Node):
 
             transformed_pose.position.z += 0.10
 
-            self.logger.info(f"Following marker at pose: {transformed_pose}")
-            self.move_to(transformed_pose)
+            self.logger.info(f"------------------------(3)Following marker at pose: {transformed_pose}")
+            # self.move_to(transformed_pose)
+        except Exception as e:
+            self.logger.error(f"Unexpected exception during marker processing: {e}")
         finally:
             self.logger.info(("Finished processing marker with ID: " f"{self.marker_id}"))
-            # self.is_processing_marker = False
+            self.release_processing()  # always release the lock here
+
+            
     def release_processing(self):
         if self.processing_lock.locked():
-            self.processing_lock.release()
-        self.is_processing_marker = False
+            try:
+                self.processing_lock.release()
+            except RuntimeError as e:
+                self.logger.warning(f"Tried to release processing lock but failed: {e}")
+        else:
+            self.logger.debug("Processing lock was not locked at release attempt.")
+
         self.joint_states_enabled = True
         
-    def _transform_pose(self, pose: Pose, source_frame,
-                        target_frame: str) -> Pose:
-        # Get the transform from source frame to target frame
-        transform = self.tf_buffer.lookup_transform(target_frame, source_frame,
-                                                    Time())
-        # Transform the pose
+    def _transform_pose(self, pose: Pose, source_frame: str, target_frame: str) -> Pose:
+        """Transforms a pose from the source_frame to the target_frame,
+        publishes both the direct transformed pose and one offset in z by +5cm,
+        and returns the direct transformed pose."""
+        
+        # Look up the transform from source_frame -> target_frame
+        self.logger.info(f"------------------------(6)Transforming pose from {source_frame} to {target_frame}")
+        self.get_logger().info(f"------------------------(7)tf_buffer=" + str(self.tf_buffer))
+        transform = self.tf_buffer.lookup_transform(target_frame, source_frame, Time())
+        
+        self.logger.info(f"------------------------(4)Transform: {transform}")
+        # Transform the original pose
         transformed_pose = do_transform_pose(pose, transform)
-        # publish pose
+        self.get_logger().info(f"------------------------(5)Transformed pose: {transformed_pose}")  
+        # Publish the direct transformed pose
         stamped_pose = PoseStamped()
+        stamped_pose.header.stamp = self.get_clock().now().to_msg()
         stamped_pose.header.frame_id = target_frame
         stamped_pose.pose = transformed_pose
         self.pose_pub.publish(stamped_pose)
-
-        pose.position.z += 0.05
-        transformed_pose = do_transform_pose(pose, transform)
-
-        stamped_pose = PoseStamped()
-        stamped_pose.header.frame_id = target_frame
-        stamped_pose.pose = transformed_pose
-        self.target_pose_pub.publish(stamped_pose)
+        
+        # Create a copy of the original pose with z offset +5cm before transforming
+        pose_with_offset = Pose()
+        pose_with_offset.position = Point(
+            x=pose.position.x,
+            y=pose.position.y,
+            z=pose.position.z + 0.05  # add 5 cm in z
+        )
+        pose_with_offset.orientation = pose.orientation
+        
+        transformed_pose_offset = do_transform_pose(pose_with_offset, transform)
+        
+        # Publish the offset pose (useful for visualizations)
+        stamped_offset_pose = PoseStamped()
+        stamped_offset_pose.header.stamp = self.get_clock().now().to_msg()
+        stamped_offset_pose.header.frame_id = target_frame
+        stamped_offset_pose.pose = transformed_pose_offset
+        self.target_pose_pub.publish(stamped_offset_pose)
+        
         return transformed_pose
+
 
     def move_to(self, msg: Pose):
         pose_goal = PoseStamped()
@@ -188,7 +239,7 @@ class ArucoMarkerFollower(Node):
         #     self.tmp = 1
         #     msg = Pose(position = Point(x=0.03,y=-0.33,z=0.32),orientation = Quaternion(x=0.4263,y=0.0428,z=0.0902,w=0.899))
 
-        self.send_move_request(pose=msg,is_cartesian=True)
+        self.send_move_request(pose=msg,is_cartesian=False)
         # self.moveit2.move_to_pose(pose=pose_goal)
         # self.moveit2.wait_until_executed()
 
@@ -233,10 +284,10 @@ class ArucoMarkerFollower(Node):
     #     future.add_done_callback(self.handle_response)
 
 def main():
-    # debugpy.listen(("0.0.0.0", 5678))
-    # print("Waiting for debugger to attach...")
-    # debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
-    # print("debugger attached")
+    debugpy.listen(("0.0.0.0", 5678))
+    print("Waiting for debugger to attach...")
+    debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
+    print("debugger attached")
 
     rclpy.init()
     node = ArucoMarkerFollower()

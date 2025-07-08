@@ -17,7 +17,15 @@ def generate_launch_description():
                     "rs_launch.py",
                 )
             ]
-        )
+        ),
+        launch_arguments={
+            'enable_rgbd': 'true',
+            'enable_sync': 'true',
+            'align_depth.enable': 'true',
+            'enable_color': 'true',
+            'enable_depth': 'true',
+            'initial_reset': 'true',
+        }.items(),
     )
 
     ar_moveit_launch = PythonLaunchDescriptionSource(
