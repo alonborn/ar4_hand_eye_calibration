@@ -284,10 +284,10 @@ class ArucoMarkerFollower(Node):
     #     future.add_done_callback(self.handle_response)
 
 def main():
-    debugpy.listen(("0.0.0.0", 5678))
-    print("Waiting for debugger to attach...")
-    debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
-    print("debugger attached")
+    # debugpy.listen(("0.0.0.0", 5678))
+    # print("Waiting for debugger to attach...")
+    # debugpy.wait_for_client()  # Uncomment this if you want to pause execution until the debugger attaches
+    # print("debugger attached")
 
     rclpy.init()
     node = ArucoMarkerFollower()
