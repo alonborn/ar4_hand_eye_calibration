@@ -125,7 +125,7 @@ def generate_launch_description():
         )
     
     ld = LaunchDescription()
-    ld.add_action(realsense)
+    # ld.add_action(realsense)
     ld.add_action(static_tf_publisher)
     ld.add_action(ar_moveit)
     ld.add_action(aruco_recognition_node)
