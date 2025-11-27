@@ -24,5 +24,4 @@ def generate_launch_description():
     #ld.add_action(aruco_recognition_node)
     ld.add_action(visualize_aruco)
     #ld.add_action(easy_handeye2)
-    #ld.add_action(move_ar2_node)
     return ld
